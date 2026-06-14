@@ -1,0 +1,290 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ── Enums (diseño §3) ─────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  EVALUADOR
+  RESPONSABLE_FACULTAD
+
+  @@map("user_role")
+}
+
+enum ApplicantType {
+  comunidad_campesina
+  comunidad_urbana
+  gobierno_local
+  otro
+
+  @@map("applicant_type")
+}
+
+enum RequestChannel {
+  app_movil
+  web
+
+  @@map("request_channel")
+}
+
+enum RequestPriority {
+  baja
+  media
+  alta
+
+  @@map("request_priority")
+}
+
+enum RequestStatus {
+  ENVIADA
+  EN_REVISION
+  INFORMACION_PENDIENTE
+  DERIVADA_A_FACULTAD
+  ACEPTADA_GRUPO_ABIERTO
+  EN_EJECUCION
+  ATENDIDA_CONSTANCIA_EMITIDA
+  CERRADA
+  NO_PROCEDE
+
+  @@map("request_status")
+}
+
+enum KnowledgeSourceType {
+  insumo_desafio
+  publica
+  simulada
+  referencial
+
+  @@map("knowledge_source_type")
+}
+
+// ── Tablas (diseño §4) ────────────────────────────────────────────────────
+
+model User {
+  id             String       @id @default(uuid()) @db.Uuid
+  email          String       @unique @db.VarChar(150)
+  passwordHash   String       @map("password_hash") @db.VarChar(255)
+  fullName       String       @map("full_name") @db.VarChar(120)
+  role           UserRole
+  facultyAreaId  String?      @map("faculty_area_id") @db.Uuid
+  facultyArea    FacultyArea? @relation(fields: [facultyAreaId], references: [id])
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  historyChanges RequestStatusHistory[]
+
+  @@map("users")
+}
+
+model FacultyArea {
+  id           String   @id @default(uuid()) @db.Uuid
+  slug         String   @unique @db.VarChar(60)
+  name         String   @db.VarChar(120)
+  description  String
+  topics       String[] @default([])
+  supportTypes String[] @default([]) @map("support_types")
+  contactEmail String?  @map("contact_email") @db.VarChar(150)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users             User[]
+  services          Service[]
+  suggestedRequests SupportRequest[]  @relation("SuggestedArea")
+  assignedRequests  SupportRequest[]  @relation("AssignedArea")
+  aiClassifications AiClassification[]
+
+  @@map("faculty_areas")
+}
+
+model Service {
+  id            String      @id @default(uuid()) @db.Uuid
+  slug          String      @unique @db.VarChar(80)
+  name          String      @db.VarChar(150)
+  category      String      @db.VarChar(80)
+  description   String
+  requirements  String[]    @default([])
+  supportTypes  String[]    @default([]) @map("support_types")
+  facultyAreaId String      @map("faculty_area_id") @db.Uuid
+  facultyArea   FacultyArea @relation(fields: [facultyAreaId], references: [id])
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([category])
+  @@index([facultyAreaId])
+  @@map("services")
+}
+
+model Community {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @db.VarChar(150)
+  type      ApplicantType
+  district  String        @db.VarChar(100)
+  province  String        @default("Huancayo") @db.VarChar(100)
+  region    String        @default("Junín") @db.VarChar(100)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  requests SupportRequest[]
+
+  @@unique([name, type, district])
+  @@map("communities")
+}
+
+model SupportRequest {
+  id                   String          @id @default(uuid()) @db.Uuid
+  code                 String          @unique @db.VarChar(20)
+  applicantType        ApplicantType   @map("applicant_type")
+  channel              RequestChannel
+  representativeName   String          @map("representative_name") @db.VarChar(120)
+  representativeDni    String          @map("representative_dni") @db.Char(8)
+  contactPhone         String          @map("contact_phone") @db.VarChar(15)
+  contactEmail         String?         @map("contact_email") @db.VarChar(150)
+  communityId          String?         @map("community_id") @db.Uuid
+  community            Community?      @relation(fields: [communityId], references: [id])
+  communityName        String          @map("community_name") @db.VarChar(150)
+  location             String          @db.VarChar(150)
+  district             String          @db.VarChar(100)
+  rawDescription       String          @map("raw_description")
+  formalTitle          String?         @map("formal_title") @db.VarChar(200)
+  formalDescription    String          @map("formal_description")
+  category             String          @db.VarChar(80)
+  supportType          String          @map("support_type") @db.VarChar(80)
+  suggestedAreaId      String?         @map("suggested_area_id") @db.Uuid
+  suggestedArea        FacultyArea?    @relation("SuggestedArea", fields: [suggestedAreaId], references: [id])
+  assignedAreaId       String?         @map("assigned_area_id") @db.Uuid
+  assignedArea         FacultyArea?    @relation("AssignedArea", fields: [assignedAreaId], references: [id])
+  beneficiariesCount   Int?            @map("beneficiaries_count")
+  priority             RequestPriority @default(media)
+  status               RequestStatus   @default(ENVIADA)
+  entityName           String?         @map("entity_name") @db.VarChar(150)
+  officialPosition     String?         @map("official_position") @db.VarChar(100)
+  attachedDocumentName String?         @map("attached_document_name") @db.VarChar(200)
+  signatureImage       String?         @map("signature_image")
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  aiClassification AiClassification?
+  history          RequestStatusHistory[]
+  replies          RequestReply[]
+
+  @@index([status])
+  @@index([category])
+  @@index([district])
+  @@index([representativeDni])
+  @@index([createdAt])
+  @@map("support_requests")
+}
+
+model AiClassification {
+  id               String         @id @default(uuid()) @db.Uuid
+  requestId        String         @unique @map("request_id") @db.Uuid
+  request          SupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  category         String         @db.VarChar(80)
+  supportType      String         @map("support_type") @db.VarChar(80)
+  suggestedArea    String         @map("suggested_area") @db.VarChar(120)
+  suggestedAreaId  String?        @map("suggested_area_id") @db.Uuid
+  suggestedAreaRef FacultyArea?   @relation(fields: [suggestedAreaId], references: [id])
+  confidence       Decimal        @db.Decimal(3, 2)
+  missingFields    String[]       @default([]) @map("missing_fields")
+  reasoningSummary String         @map("reasoning_summary")
+  generatedSummary String         @map("generated_summary")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("ai_classifications")
+}
+
+model RequestStatusHistory {
+  id          String         @id @default(uuid()) @db.Uuid
+  requestId   String         @map("request_id") @db.Uuid
+  request     SupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fromStatus  RequestStatus? @map("from_status")
+  toStatus    RequestStatus  @map("to_status")
+  ownerArea   String         @map("owner_area") @db.VarChar(150)
+  nextStep    String?        @map("next_step") @db.VarChar(250)
+  comment     String?
+  changedById String?        @map("changed_by") @db.Uuid
+  changedBy   User?          @relation(fields: [changedById], references: [id])
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([requestId, createdAt])
+  @@map("request_status_history")
+}
+
+model RequestReply {
+  id        String         @id @default(uuid()) @db.Uuid
+  requestId String         @map("request_id") @db.Uuid
+  request   SupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([requestId, createdAt])
+  @@map("request_replies")
+}
+
+model KnowledgeDocument {
+  id         String              @id @default(uuid()) @db.Uuid
+  title      String              @db.VarChar(200)
+  sourceType KnowledgeSourceType @map("source_type")
+  content    String
+  tags       String[]            @default([])
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  chunks KnowledgeChunk[]
+
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String                       @id @default(uuid()) @db.Uuid
+  documentId String                       @map("document_id") @db.Uuid
+  document   KnowledgeDocument            @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkIndex Int                          @map("chunk_index")
+  content    String
+  embedding  Unsupported("vector(768)")
+  createdAt  DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([documentId, chunkIndex])
+  @@map("knowledge_chunks")
+}
+
+model RequestTemplate {
+  id            String         @id @default(uuid()) @db.Uuid
+  slug          String         @unique @db.VarChar(60)
+  name          String         @db.VarChar(120)
+  applicantType ApplicantType? @map("applicant_type")
+  content       String
+  placeholders  String[]       @default([])
+  isActive      Boolean        @default(true) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([applicantType, isActive])
+  @@map("request_templates")
+}
+
+// ── v1.2 (2026-06-12): convocatorias de proyección social ─────────────────
+// Ventanas que cierran 1 vez por semestre (abril/septiembre). El envío de
+// solicitudes se bloquea fuera de la ventana vigente (bloqueo blando).
+model Convocatoria {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(120)
+  opensAt   DateTime @map("opens_at") @db.Timestamptz(6)
+  closesAt  DateTime @map("closes_at") @db.Timestamptz(6)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([opensAt, closesAt])
+  @@map("convocatorias")
+}

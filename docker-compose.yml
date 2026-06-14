@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: uncp-conecta-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: uncp
+      POSTGRES_PASSWORD: uncp_demo_2026
+      POSTGRES_DB: uncp_conecta
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uncp -d uncp_conecta"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db_data:
