@@ -3,6 +3,7 @@ dist/
 .env
 *.log
 .DS_Store
+.env.docker.bak
 
 # Exclude all .md files except README.md (and READNE.md typo just in case)
 *.md
